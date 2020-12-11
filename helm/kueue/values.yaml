@@ -1,0 +1,13 @@
+kafdrop:
+  kafka:
+    brokerConnect: "kueue-kafka-bootstrap:9092"
+  nameOverride: "kafdrop"
+  fullnameOverride: "kafdrop"
+  image:
+    repository: obsidiandynamics/kafdrop
+    tag: "3.27.0"
+    pullPolicy: IfNotPresent
+  jvm:
+    opts: "-Xms32M -Xmx64M"
+  service:
+    nodePort: 30005

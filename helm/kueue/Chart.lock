@@ -1,0 +1,9 @@
+dependencies:
+- name: strimzi-kafka-operator
+  repository: https://strimzi.io/charts
+  version: 0.20.0
+- name: kafdrop
+  repository: file://../kafdrop
+  version: 0.1.0
+digest: sha256:7cef4c33a6f37523e7c54340956023d54eb6a255bef20c2255619456cc291717
+generated: "2020-12-11T00:09:21.379134-07:00"

@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: kafkacat
+  labels:
+    project: {{ .Chart.Name }}
+    name: {{ .Chart.Name }}-kafkacat
+    app: {{ .Chart.Name }}-kafkacat
+spec:
+  selector:
+    matchLabels:
+      app: {{ .Chart.Name }}-kafkacat
+  serviceName: ""
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        project: {{ .Chart.Name }}
+        name: {{ .Chart.Name }}-kafkacat
+        app: {{ .Chart.Name }}-kafkacat
+      annotations:
+    spec:
+      containers:
+      - image: edenhill/kafkacat:1.6.0
+        name: kafkacat
+        command:
+          - sleep
+          - '9999999'
+        volumeMounts:
+          - mountPath: /root/.config/
+            name: {{ .Chart.Name }}-kafkacat-config
+      volumes:
+        - name: {{ .Chart.Name }}-kafkacat-config
+          configMap:
+            name: {{ .Chart.Name }}-kafkacat-config
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Chart.Name }}-kafkacat-config
+  labels:
+    project: {{ .Chart.Name }}
+    name: {{ .Chart.Name }}
+    app: {{ .Chart.Name }}
+data:
+  kafkacat.conf: |-
+    bootstrap.servers={{ .Values.kafdrop.kafka.brokerConnect }}
