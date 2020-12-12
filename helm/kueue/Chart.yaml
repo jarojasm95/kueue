@@ -1,0 +1,24 @@
+name: kueue
+apiVersion: v2
+version: 0.1.0
+appVersion: 0.1.0
+description: Distributed Task Queue - using Kubernetes and Kafka
+keywords:
+- task
+- queue
+- kubernetes
+- kafka
+home: https://github.com/jarojasm95/kueue
+sources:
+- https://github.com/jarojasm95/kueue
+maintainers:
+- name: jarojasm95
+  email: jose.rojas95@mail.com
+engine: gotpl
+dependencies:
+- name: strimzi-kafka-operator
+  version: "0.20.0"
+  repository: "https://strimzi.io/charts"
+- name: kafdrop
+  version: "0.1.0"
+  repository: "file://../kafdrop"
