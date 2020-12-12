@@ -1,4 +1,4 @@
-name: Docker Image CI
+name: Install & Linter
 on:
   push:
     branches: [ main ]
