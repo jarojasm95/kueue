@@ -36,5 +36,6 @@ ENV PATH /home/kueue/.venv/bin:$PATH
 RUN chown -R kueue:kueue /home/kueue
 USER kueue
 
+COPY pyproject.toml ./
 COPY kueue kueue
 COPY tests tests

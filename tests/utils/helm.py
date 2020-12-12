@@ -15,14 +15,14 @@ class Helm:
         helm="helm",
         kubeconfig=None,
         default_namespace="default",
-        default_chart_dir=Path("helm").absolute(),
+        default_chart_dir=None,
         raise_ex_on_err=True,
     ):
 
         self.helm = helm
         self.kubeconfig = kubeconfig
         self.default_namespace = default_namespace
-        self.default_chart_dir = default_chart_dir
+        self.default_chart_dir = default_chart_dir or Path("helm").absolute()
         self.raise_ex_on_err = raise_ex_on_err
 
         self.path = Path(".venv/bin")
@@ -118,7 +118,7 @@ class Helm:
         command = [self.helm, "pull", chart_name, "--untar", "--untardir", chart_dir]
         return self._run_command(command, **kwargs)
 
-    def list(self, **kwargs):
+    def list(self, **kwargs):  # noqa: A003
 
         command = [self.helm, "list"]
         return self._run_command(command, json=True, **kwargs)

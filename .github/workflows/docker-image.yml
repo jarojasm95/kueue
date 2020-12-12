@@ -1,18 +1,17 @@
 name: Docker Image CI
-
 on:
   push:
     branches: [ main ]
   pull_request:
     branches: [ main ]
-
 jobs:
-
-  build:
-
+  static:
     runs-on: ubuntu-latest
-
     steps:
     - uses: actions/checkout@v2
-    - name: Build the Docker image
-      run: docker build . --file Dockerfile --tag kueue:$(date +%s)
+    - name: Build Docker image
+      run: docker build . --file Dockerfile --tag kueue:latest
+    - name: Check style - "kueue"
+      run: docker run --rm -it kueue:latest flakehell lint kueue
+    - name: Check style - "tests"
+      run: docker run --rm -it kueue:latest flakehell lint tests
