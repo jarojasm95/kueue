@@ -96,7 +96,7 @@ class Helm:
             result.check_returncode()
 
         data = None
-        if not err:
+        if result.returncode == 0:
             if json_mode:
                 data = json.loads(result.stdout)
             else:

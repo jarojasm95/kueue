@@ -1,7 +1,7 @@
 import logging
 import signal
 import socket
-from contextlib import contextmanager, suppress
+from contextlib import contextmanager
 from enum import Enum
 from typing import List, Optional
 
@@ -67,7 +67,7 @@ class ConsumerBase:
     def __init__(self, **config):
         name = f"{self.__class__.__module__}.{self.__class__.__qualname__}"
         self.logger = logging.getLogger(name)
-        self.consumer = Consumer(
+        self.kafka = Consumer(
             {
                 "bootstrap.servers": KueueConfig().kafka_bootstrap,
                 "group.id": name,
@@ -83,7 +83,6 @@ class ConsumerBase:
             }
         )
         self._exit = False
-        self._setup_signal_handling()
 
     def on_assign(self, _, partitions: List[TopicPartition]):
         self.logger.info("on_assign: %s", partitions)
@@ -114,7 +113,7 @@ class ConsumerBase:
 
     def consume(self) -> List[Message]:
         try:
-            messages: List[Message] = self.consumer.consume(
+            messages: List[Message] = self.kafka.consume(
                 num_messages=KueueConfig().consume_defaults.prefetch,
                 timeout=KueueConfig().consume_defaults.timeout,
             )
@@ -127,8 +126,8 @@ class ConsumerBase:
         if not messages:
             self.on_timeout()
             return []
-        errors = filter(lambda msg: msg.error(), messages)
-        messages = filter(lambda msg: not msg.error(), messages)
+        errors = list(filter(lambda msg: msg.error(), messages))
+        messages = list(filter(lambda msg: not msg.error(), messages))
         for error_msg in errors:
             if error_msg.error().code() == KafkaError._PARTITION_EOF:
                 self.on_eof(error_msg)
@@ -143,7 +142,6 @@ class ConsumerBase:
                 yield message
 
     def _setup_signal_handling(self):
-        signal.signal(signal.SIGINT, self.stop)
         signal.signal(signal.SIGTERM, self.stop)
 
     def stop(self, signal=None, frame=None):
@@ -155,7 +153,7 @@ class ConsumerBase:
         try:
             yield self._iterator()
         finally:
-            self.consumer.close()
+            self.kafka.close()
 
 
 class TaskExecutorConsumer(ConsumerBase):
@@ -165,7 +163,8 @@ class TaskExecutorConsumer(ConsumerBase):
 
     def __init__(self, topics: List[str], **config):
         super().__init__(**config)
-        self.consumer.subscribe(topics, on_assign=self.on_assign, on_revoke=self.on_revoke)
+        self.kafka.subscribe(topics, on_assign=self.on_assign, on_revoke=self.on_revoke)
+        self._setup_signal_handling()
 
     def on_message(self, message: TaskMessage):
         return message.executor().run()
@@ -174,7 +173,7 @@ class TaskExecutorConsumer(ConsumerBase):
         self.logger.info("on_success: %s | %s", message, result)
 
     def on_error(self, message: TaskMessage):
-        self.logger.exception("on_error: %s | %s", message)
+        self.logger.exception("on_error: %s", message)
 
     def on_commit(self, error: Optional[KafkaError], partitions: List[TopicPartition]):
         self.logger.info("on_commit: %s | %s", error, partitions)
@@ -184,16 +183,18 @@ class TaskExecutorConsumer(ConsumerBase):
         try:
             result = self.on_message(parsed)
         except Exception:
-            with suppress(Exception):
+            try:
                 self.on_error(parsed)
+            except Exception:
+                self.logger.exception("error calling on_error")
         else:
-            with suppress(Exception):
+            try:
                 self.on_success(parsed, result)
+            except Exception:
+                self.logger.exception("error calling on_success")
 
         try:
-            commits: List[TopicPartition] = self.consumer.commit(
-                message=message, asynchronous=False
-            )
+            commits: List[TopicPartition] = self.kafka.commit(message=message, asynchronous=False)
         except KafkaException as e:
             self.on_commit(e.args[0], [])
         else:

@@ -10,18 +10,28 @@ Kueue was born out of the lack of a library that leverages [Kafka](https://kafka
 ## Features
 - simple
 - intuitive api
+- extensible
 
 ## Code Example
 ```python
 import time
-from kueue import task
+from kueue import task, TaskExecutorConsumer, KueueConfig
+
+KueueConfig(
+    kafka_bootstrap='localhost:9092'
+)
 
 @task(topic="my-topic")
 def sleepy_task(sleep: int):
     time.sleep(sleep)
+    print("done sleeping", sleep)
     return sleep
 
-sleepy_task.enqueue(args=(60))
+sleepy_task.enqueue(args=(15,))
+
+consumer = TaskExecutorConsumer(["my-topic"])
+consumer.start()
+# prints "done sleeping, 15"
 ```
 
 ## Installation

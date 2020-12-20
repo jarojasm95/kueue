@@ -1,13 +1,22 @@
+import logging
 import uuid
+from contextlib import suppress
 from pathlib import Path
+from subprocess import CalledProcessError
 from typing import Tuple
 
 import pytest
+import yaml
 from hostsman import Host
 
 from kueue import KueueConfig
 from tests.utils.helm import Helm
 from tests.utils.kind import KindCluster
+
+
+@pytest.fixture
+def logger(request) -> logging.Logger:
+    return logging.getLogger(request.node.name)
 
 
 @pytest.fixture(scope="session")
@@ -18,8 +27,13 @@ def helm(kind_cluster: KindCluster) -> Helm:
 
 
 @pytest.fixture(scope="session")
-def kafka_ports() -> Tuple[int, int]:
-    return 30092, 30094
+def kafka_ports(request) -> Tuple[int, int]:
+    with request.config.getoption("kind_config").open() as config:
+        kind_config = yaml.safe_load(config)
+    return (
+        kind_config["nodes"][0]["extraPortMappings"][-2]["hostPort"],
+        kind_config["nodes"][0]["extraPortMappings"][-1]["hostPort"],
+    )
 
 
 @pytest.fixture
@@ -36,8 +50,13 @@ def kafka_bootstrap(
     if kafka_bootstrap:
         yield kafka_bootstrap
         return
-    skip_helm = request.config.getoption("skip_helm")
-    if not skip_helm:
+
+    need_install = True
+    with suppress(CalledProcessError):
+        result, err = helm.status("kueue")
+        if result["info"]["status"] == "deployed":
+            need_install = False
+    if need_install:
         helm.install("kueue", "kueue", upgrade=True)
 
     kind_cluster.wait_for_pod("kueue-kafka-0")
@@ -55,9 +74,9 @@ def kafka_bootstrap(
         kind_cluster.delete_pod("kueue-kafka-0")
         kind_cluster.wait_for_pod("kueue-kafka-0")
     if not Host().exists("kueue-control-plane"):
-        Host().add("kueue-control-plane")
+        Host(keepingHistory=False).add("kueue-control-plane")
     yield f"kueue-control-plane:{bootstrap_port}"
-    if not request.config.getoption("keep_cluster") and not skip_helm:
+    if not request.config.getoption("keep_cluster"):
         helm.uninstall("kueue")
 
 
@@ -85,6 +104,7 @@ def kind_cluster(request) -> KindCluster:
     kubeconfig = request.config.getoption("kubeconfig")
     cluster = KindCluster("kueue", Path(kubeconfig) if kubeconfig else None)
     cluster.create(request.config.getoption("kind_config"))
+    cluster.kubeconfig_path.chmod(0o600)
     cluster.ensure_kubectl()
     yield cluster
     if not keep:
@@ -93,13 +113,6 @@ def kind_cluster(request) -> KindCluster:
 
 def pytest_addoption(parser, pluginmanager):
     group = parser.getgroup("kueue")
-    group.addoption(
-        "--skip-helm",
-        dest="skip_helm",
-        action="store_true",
-        default=False,
-        help="skip helm install / uninstall",
-    )
     group.addoption(
         "--kind-config",
         dest="kind_config",

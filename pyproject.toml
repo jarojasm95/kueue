@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "kueue"
-version = "0.1.1"
+version = "0.1.2"
 description = "Distributed Task Queue - backed by Kafka"
 authors = ["Jose Rojas <jose.rojas95@mail.com>"]
 license = "MIT"
@@ -84,8 +84,8 @@ junit_family = "xunit2"
 markers = [
     "integration: integration tests."
 ]
+log_cli_level = "INFO"
 addopts = """
-    --keep-cluster
     --cov=kueue \
     --cov-report=html:tests/coverage \
     --cov-report=term \

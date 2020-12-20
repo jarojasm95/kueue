@@ -45,7 +45,8 @@ class TaskExecutor(BaseModel):
 
     @property
     def task_name(self):
-        return f"{self.task.__module__}.{self.task.__qualname__}"
+        serializer = self.Config.json_encoders.get(type(self.task))
+        return serializer(self.task)
 
     def run(self):
         return self.task(*self.args, **self.kwargs)
