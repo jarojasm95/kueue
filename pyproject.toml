@@ -1,8 +1,17 @@
 [tool.poetry]
 name = "kueue"
-version = "0.1.0"
-description = "Distributed Task Queue - using Kubernetes and Kafka"
+version = "0.1.1"
+description = "Distributed Task Queue - backed by Kafka"
 authors = ["Jose Rojas <jose.rojas95@mail.com>"]
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/jarojasm95/kueue"
+keywords = [
+    "python",
+    "kafka",
+    "distributed",
+    "task-queue"
+]
 
 [tool.poetry.dependencies]
 python = "^3.8"

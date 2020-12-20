@@ -1,0 +1,28 @@
+name: Upload Python Package
+on:
+  release:
+    types: [created]
+jobs:
+  deploy:
+    environment:
+      name: Deploy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-python@v2
+        with:
+          python-version: "3.8"
+          architecture: "x64"
+      - name: Install Dependencies
+        env:
+          POETRY_VIRTUALENVS_CREATE: false
+          POETRY_INSTALLER_PARALLEL: false
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install poetry==1.1.4
+          poetry install
+      - name: Build and publish
+        env:
+          POETRY_PYPI_TOKEN_PYPI: ${{ secrets.PYPI_TOKEN }}
+        run: |
+          poetry publish --build
