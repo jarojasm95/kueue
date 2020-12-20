@@ -130,5 +130,6 @@ dmypy.json
 
 .kube/
 .pytest-kind/
-coverage/
+tests/coverage/
+tests/results/
 helm/kueue/charts/*.tgz

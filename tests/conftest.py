@@ -1,12 +1,13 @@
+import uuid
 from pathlib import Path
+from typing import Tuple
 
 import pytest
+from hostsman import Host
 
-from kueue.config import KueueConfig
-from kueue.task import TaskExecution
+from kueue import KueueConfig
 from tests.utils.helm import Helm
 from tests.utils.kind import KindCluster
-from tests.utils.tasks import return_args
 
 
 @pytest.fixture(scope="session")
@@ -17,42 +18,100 @@ def helm(kind_cluster: KindCluster) -> Helm:
 
 
 @pytest.fixture(scope="session")
-def kafka(helm: Helm, kind_cluster: KindCluster, request) -> KueueConfig:
-    keep = request.config.getoption("keep_cluster")
-    skip_helm = request.config.getoption("skip_helm")
-    if not skip_helm:
-        # TODO: wait for kafka
-        helm.install("kueue", "kueue", upgrade=True)
-    kind_cluster.ensure_kubectl()
-    # TODO: Patch kafka services to run at this port, then restart kafka and wait until ready
-    # TODO: Use hostsman to add kind node
-    yield "localhost:30092"
-    if not keep and not skip_helm:
-        helm.uninstall("kueue")
+def kafka_ports() -> Tuple[int, int]:
+    return 30092, 30094
+
+
+@pytest.fixture
+def topic_name(request):
+    suffix = uuid.uuid4().hex[:5]
+    return f"{request.node.name}-{suffix}"
 
 
 @pytest.fixture(scope="session")
-def kueue_config(kafka: str) -> KueueConfig:
-    yield KueueConfig(kafka=kafka)
+def kafka_bootstrap(
+    helm: Helm, kind_cluster: KindCluster, kafka_ports: Tuple[int, int], request
+) -> KueueConfig:
+    kafka_bootstrap = request.config.getoption("kafka_bootstrap")
+    if kafka_bootstrap:
+        yield kafka_bootstrap
+        return
+    skip_helm = request.config.getoption("skip_helm")
+    if not skip_helm:
+        helm.install("kueue", "kueue", upgrade=True)
+
+    kind_cluster.wait_for_pod("kueue-kafka-0")
+    restart_needed = False
+    bootstrap_port, broker_port = kafka_ports
+    with kind_cluster.service_update("kueue-kafka-external-bootstrap") as bootstrap:
+        if bootstrap.obj["spec"]["ports"][0]["nodePort"] != bootstrap_port:
+            restart_needed = True
+            bootstrap.obj["spec"]["ports"][0]["nodePort"] = bootstrap_port
+    with kind_cluster.service_update("kueue-kafka-0") as bootstrap:
+        if bootstrap.obj["spec"]["ports"][0]["nodePort"] != broker_port:
+            restart_needed = True
+            bootstrap.obj["spec"]["ports"][0]["nodePort"] = broker_port
+    if restart_needed:
+        kind_cluster.delete_pod("kueue-kafka-0")
+        kind_cluster.wait_for_pod("kueue-kafka-0")
+    if not Host().exists("kueue-control-plane"):
+        Host().add("kueue-control-plane")
+    yield f"kueue-control-plane:{bootstrap_port}"
+    if not request.config.getoption("keep_cluster") and not skip_helm:
+        helm.uninstall("kueue")
+
+
+@pytest.fixture()
+def kueue_config(kafka_bootstrap: str) -> KueueConfig:
+    yield KueueConfig(kafka_bootstrap=kafka_bootstrap)
+    KueueConfig().singleton_reset_()
+
+
+@pytest.fixture()
+def fast_produce_kueue_config(kafka_bootstrap: str) -> KueueConfig:
+    yield KueueConfig(
+        kafka_bootstrap=kafka_bootstrap,
+        producer_config={
+            "request.required.acks": 0,
+        },
+    )
+    KueueConfig().singleton_reset_()
 
 
 @pytest.fixture(scope="session")
 def kind_cluster(request) -> KindCluster:
     """Provide a Kubernetes kind cluster as test fixture"""
-    name = request.config.getoption("cluster_name")
     keep = request.config.getoption("keep_cluster")
     kubeconfig = request.config.getoption("kubeconfig")
-    cluster = KindCluster(name, Path(kubeconfig) if kubeconfig else None)
-    cluster.create("kind.yaml")
+    cluster = KindCluster("kueue", Path(kubeconfig) if kubeconfig else None)
+    cluster.create(request.config.getoption("kind_config"))
+    cluster.ensure_kubectl()
     yield cluster
     if not keep:
         cluster.delete()
 
 
-def kueue_task_execution() -> TaskExecution:
-    return TaskExecution.parse_obj({"name": return_args, "args": [1], "kwargs": {"test": True}})
-
-
 def pytest_addoption(parser, pluginmanager):
     group = parser.getgroup("kueue")
-    group.addoption("--skip-helm", dest="skip_helm", action="store_true", default=False)
+    group.addoption(
+        "--skip-helm",
+        dest="skip_helm",
+        action="store_true",
+        default=False,
+        help="skip helm install / uninstall",
+    )
+    group.addoption(
+        "--kind-config",
+        dest="kind_config",
+        action="store",
+        type=Path,
+        default=Path("kind.yaml"),
+        help="Path to kind cluster config",
+    )
+    group.addoption(
+        "--kafka-bootstrap",
+        dest="kafka_bootstrap",
+        action="store",
+        help="location of kafka bootstrap service for integration tests",
+        default=None,
+    )
