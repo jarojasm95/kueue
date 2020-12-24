@@ -1,7 +1,7 @@
 import logging
 import signal
 import socket
-from contextlib import contextmanager
+from contextlib import closing
 from enum import Enum
 from typing import List, Optional
 
@@ -67,22 +67,45 @@ class ConsumerBase:
     def __init__(self, **config):
         name = f"{self.__class__.__module__}.{self.__class__.__qualname__}"
         self.logger = logging.getLogger(name)
-        self.kafka = Consumer(
-            {
-                "bootstrap.servers": KueueConfig().kafka_bootstrap,
-                "group.id": name,
-                "client.rack": socket.gethostname(),
-                "enable.auto.commit": False,
-                "on_commit": self.on_commit,
-                "error_cb": self.on_internal_error,
-                "throttle_cb": self.on_throttle,
-                "auto.offset.reset": "earliest",
-                "api.version.request": True,
-                **KueueConfig().consumer_config,
-                **config,
-            }
-        )
+        self.config = {
+            "bootstrap.servers": KueueConfig().kafka_bootstrap,
+            "group.id": name,
+            "client.rack": socket.gethostname(),
+            "enable.auto.commit": False,
+            "on_commit": self.on_auto_commit,
+            "error_cb": self.on_internal_error,
+            "throttle_cb": self.on_throttle,
+            "stats_cb": self.on_stats,
+            "auto.offset.reset": "earliest",
+            "api.version.request": True,
+            **KueueConfig().consumer_config,
+            **config,
+        }
         self._exit = False
+        self._setup_signal_handling()
+        self._kafka = None
+
+    @staticmethod
+    def on_throttle(event: ThrottleEvent):
+        pass
+
+    @staticmethod
+    def on_internal_error(error: KafkaError):
+        pass
+
+    @staticmethod
+    def on_stats(stats: str):
+        pass
+
+    @staticmethod
+    def on_auto_commit(error: Optional[KafkaError], partitions: List[TopicPartition]):
+        pass
+
+    @property
+    def kafka(self):
+        if self._kafka is None:
+            self._kafka = Consumer(self.config, logger=self.logger)
+        return self._kafka
 
     def on_assign(self, _, partitions: List[TopicPartition]):
         self.logger.info("on_assign: %s", partitions)
@@ -93,23 +116,17 @@ class ConsumerBase:
     def on_exit(self):
         self.logger.info("on_exit")
 
-    def on_throttle(self, event: ThrottleEvent):
-        self.logger.warning("on_throttle")
-
-    def on_stats(self, stats: str):
-        self.logger.info("on_stats: %s", stats)
-
     def on_commit(self, error: Optional[KafkaError], partitions: List[TopicPartition]):
         self.logger.info("on_commit: %s | %s", error, partitions)
 
     def on_timeout(self):
         self.logger.warning("on_timeout")
 
-    def on_internal_error(self, error: KafkaError, message: Message = None):
-        self.logger.exception("on_internal_error: %s | %s", error, message)
+    def on_consume_error(self, error: KafkaError, message: Message = None):
+        self.logger.exception("on_consume_error: %s | %s", error, message)
 
-    def on_eof(self):
-        self.logger.warning("on_eof")
+    def on_eof(self, message: Message):
+        self.logger.warning("on_eof: %s", message)
 
     def consume(self) -> List[Message]:
         try:
@@ -117,11 +134,8 @@ class ConsumerBase:
                 num_messages=KueueConfig().consume_defaults.prefetch,
                 timeout=KueueConfig().consume_defaults.timeout,
             )
-        except KafkaError as e:
-            self.on_internal_error(e)
-            return []
         except KafkaException as e:
-            self.on_internal_error(e.args[0])
+            self.on_consume_error(e.args[0])
             return []
         if not messages:
             self.on_timeout()
@@ -132,10 +146,10 @@ class ConsumerBase:
             if error_msg.error().code() == KafkaError._PARTITION_EOF:
                 self.on_eof(error_msg)
             else:
-                self.on_internal_error(error_msg.error(), error_msg)
+                self.on_consume_error(error_msg.error(), error_msg)
         return messages
 
-    def _iterator(self):
+    def __iter__(self):
         while not self._exit:
             messages = self.consume()
             for message in messages:
@@ -148,12 +162,8 @@ class ConsumerBase:
         self._exit = True
         self.on_exit()
 
-    @contextmanager
-    def stream(self):
-        try:
-            yield self._iterator()
-        finally:
-            self.kafka.close()
+    def close(self):
+        self.kafka.close()
 
 
 class TaskExecutorConsumer(ConsumerBase):
@@ -163,8 +173,7 @@ class TaskExecutorConsumer(ConsumerBase):
 
     def __init__(self, topics: List[str], **config):
         super().__init__(**config)
-        self.kafka.subscribe(topics, on_assign=self.on_assign, on_revoke=self.on_revoke)
-        self._setup_signal_handling()
+        self.topics = topics
 
     def on_message(self, message: TaskMessage):
         return message.executor().run()
@@ -200,12 +209,14 @@ class TaskExecutorConsumer(ConsumerBase):
         else:
             self.on_commit(None, commits)
 
+    def subscribe(self):
+        self.kafka.subscribe(self.topics, on_assign=self.on_assign, on_revoke=self.on_revoke)
+
     def start(self):
         """
         Start message consumption
-        Should be used when the consumer is defined as a subclass of `Consumer`
-        or if callbacks are configured using the `*_handler` decorators
         """
-        with self.stream() as message_stream:
-            for message in message_stream:
+        self.subscribe()
+        with closing(self):
+            for message in self:
                 self.dispatch_message(message)

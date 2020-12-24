@@ -1,5 +1,10 @@
 ## Kueue
-![Build](https://github.com/jarojasm95/kueue/workflows/Build/badge.svg)
+[![pypi](https://img.shields.io/pypi/v/kueue.svg)](https://pypi.org/project/kueue)
+[![pypi](https://img.shields.io/pypi/pyversions/kueue.svg)](https://pypi.org/project/kueue)
+[![CI](https://github.com/jarojasm95/kueue/workflows/Build/badge.svg?event=push)](https://github.com/jarojasm95/kueue/actions?query=branch%3Amain+event%3Apush+workflow%3ABuild)
+[![style](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+[![license](https://img.shields.io/github/license/jarojasm95/kueue.svg)](https://github.com/jarojasm95/kueue/blob/main/LICENSE)
+
 
 Python Distributed Task Queue - backed by Kafka
 
@@ -46,7 +51,12 @@ Install [poetry](https://python-poetry.org/) and run `poetry install` at the roo
 ## Tests
 The test framework makes heavy use of `pytest` fixtures in order to spin up full integration environment consisting of a kubernetes cluster using [kind](https://kind.sigs.k8s.io/) and [pytest-kind](https://codeberg.org/hjacobs/pytest-kind) and kafka using [strimzi](https://strimzi.io/)
 
-`pytest`
+```bash
+# unit tests
+pytest
+# unit tests + integration tests
+pytest --integration
+````
 
 ## License
 

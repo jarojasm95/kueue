@@ -1,5 +1,4 @@
 import json
-import logging
 import uuid
 from concurrent.futures import Future
 
@@ -14,9 +13,7 @@ from tests.utils.tasks import SingleTaskConsumer, return_args
 
 
 @pytest.mark.integration
-def test_task_consumption(
-    kueue_config: KueueConfig, mocker: MockerFixture, topic_name: str, logger: logging.Logger
-):
+def test_task_consumption(kueue_config: KueueConfig, mocker: MockerFixture, topic_name: str):
     producer = TaskProducer()
     args = (uuid.uuid4().hex,)
     kwargs = {"test": True}
@@ -34,13 +31,10 @@ def test_task_consumption(
         ),
         on_delivery=lambda err, msg: message.set_result(msg),
     )
-    logger.info("produced, flushing")
     producer.flush(timeout=5)
-    logger.info("flushed, waiting")
     message: Message = message.result(timeout=5)
 
     mock = mocker.patch("tests.utils.tasks.return_args")
-    logger.info("starting consumer")
     execution = SingleTaskConsumer([topic_name])
     execution.start()
     mock.assert_called_once_with(*args, **kwargs)

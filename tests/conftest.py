@@ -87,13 +87,8 @@ def kueue_config(kafka_bootstrap: str) -> KueueConfig:
 
 
 @pytest.fixture()
-def fast_produce_kueue_config(kafka_bootstrap: str) -> KueueConfig:
-    yield KueueConfig(
-        kafka_bootstrap=kafka_bootstrap,
-        producer_config={
-            "request.required.acks": 0,
-        },
-    )
+def dummy_config() -> KueueConfig:
+    yield KueueConfig(kafka_bootstrap="localhost:9092")
     KueueConfig().singleton_reset_()
 
 
@@ -128,3 +123,14 @@ def pytest_addoption(parser, pluginmanager):
         help="location of kafka bootstrap service for integration tests",
         default=None,
     )
+    group.addoption("--integration", action="store_true", help="run integration tests")
+
+
+def pytest_collection_modifyitems(config, items):
+    if config.getoption("--integration"):
+        # --integration given in cli: do not skip slow tests
+        return
+    skip_integration = pytest.mark.skip(reason="need --integration option to run")
+    for item in items:
+        if "integration" in item.keywords:
+            item.add_marker(skip_integration)

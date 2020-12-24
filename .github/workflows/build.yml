@@ -25,3 +25,5 @@ jobs:
         run: |
           flakehell lint kueue
           flakehell lint tests
+      - name: Unit tests
+        run: pytest
